@@ -67,6 +67,7 @@ class NovelDownloaderApp:
             padding=(14, 5),
             foreground="#0b3d2e",
         )
+        style.configure("Compact.TButton", padding=(8, 2))
 
         outer = ttk.Frame(self.root, padding=12)
         outer.pack(fill="both", expand=True)
@@ -130,11 +131,11 @@ class NovelDownloaderApp:
             state="readonly",
             width=22,
         )
-        self.model_combo.pack(fill="x", pady=(4, 0))
-        ttk.Label(model_panel, text="思考预算：32768").pack(anchor="w", pady=(8, 0))
-        self.guide_button = ttk.Button(model_panel, text="引导", command=self._run_guided_agent)
-        self.guide_button.pack(fill="x", pady=(8, 0))
-        ttk.Button(model_panel, text="清除输入", command=self._clear_free_input).pack(fill="x", pady=(6, 0))
+        self.model_combo.pack(fill="x", pady=(2, 0))
+        ttk.Label(model_panel, text="思考预算：32768").pack(anchor="w", pady=(4, 0))
+        self.guide_button = ttk.Button(model_panel, text="引导", style="Compact.TButton", command=self._run_guided_agent)
+        self.guide_button.pack(fill="x", pady=(4, 0))
+        ttk.Button(model_panel, text="清除输入", style="Compact.TButton", command=self._clear_free_input).pack(fill="x", pady=(3, 0))
 
         log_header = ttk.Frame(outer)
         log_header.pack(fill="x")
