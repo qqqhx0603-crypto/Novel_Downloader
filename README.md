@@ -36,6 +36,12 @@ cd novel-chapter-exporter
 
 ### 3. 配置 API key（只在使用 AI 面板时需要）
 
+可以通过这个邀请链接注册硅基流动账号并完成实名，按当前说明可获得 16 元额度：
+
+```text
+https://cloud.siliconflow.cn/i/rxl9Pzih
+```
+
 复制示例文件：
 
 ```powershell
