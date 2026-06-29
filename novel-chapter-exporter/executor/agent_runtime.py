@@ -401,6 +401,10 @@ def _deterministic_non_ok_message(last_result: dict[str, Any]) -> str:
     )
 
 
+def _download_result_key(result: dict[str, Any]) -> str:
+    return str(result.get("book_name") or result.get("output_root") or "unknown")
+
+
 def run_agent(form_state: dict[str, Any], log: Callable[[str], None] = print) -> dict[str, Any]:
     model = str(form_state.get("model_id") or DEFAULT_MODEL).strip()
     if model not in AVAILABLE_MODELS:
@@ -427,6 +431,7 @@ def run_agent(form_state: dict[str, Any], log: Callable[[str], None] = print) ->
     log(f"AI: 已开启思考模式，模型 {model}，thinking_budget={MAX_THINKING_BUDGET}。")
 
     last_result: dict[str, Any] = {}
+    unresolved_download_failures: dict[str, dict[str, Any]] = {}
     ui_notifications: list[dict[str, str]] = []
     tool_history: list[str] = []
     max_steps = max(10, min(int(form_state.get("max_agent_steps") or 40), 80))
@@ -448,6 +453,17 @@ def run_agent(form_state: dict[str, Any], log: Callable[[str], None] = print) ->
             log("AI 回复:\n" + content)
         if not tool_calls:
             log("[[END]]结束")
+            if unresolved_download_failures:
+                failed = next(iter(unresolved_download_failures.values()))
+                message = _deterministic_non_ok_message(failed)
+                log("程序判定: " + message)
+                return {
+                    "status": "needs_user",
+                    "message": message,
+                    "last_result": failed,
+                    "ai_ignored_message": content,
+                    "ui_notifications": ui_notifications,
+                }
             if last_result:
                 raw_status = str(last_result.get("status") or "")
                 if raw_status != "ok":
@@ -491,6 +507,12 @@ def run_agent(form_state: dict[str, Any], log: Callable[[str], None] = print) ->
                     }
                 )
             last_result = result
+            if name == "download_novel":
+                key = _download_result_key(result)
+                if result.get("status") == "ok":
+                    unresolved_download_failures.pop(key, None)
+                else:
+                    unresolved_download_failures[key] = result
             tool_history.append(_history_line(name, result))
             log(f"工具结果: {json.dumps(result, ensure_ascii=False)[:2500]}")
             model_result = _result_for_model(result)
@@ -529,6 +551,6 @@ def run_agent(form_state: dict[str, Any], log: Callable[[str], None] = print) ->
     return {
         "status": "error",
         "message": "Agent 循环达到上限，未完成任务。",
-        "last_result": last_result,
+        "last_result": next(iter(unresolved_download_failures.values()), last_result),
         "ui_notifications": ui_notifications,
     }

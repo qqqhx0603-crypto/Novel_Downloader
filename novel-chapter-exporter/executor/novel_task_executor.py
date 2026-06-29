@@ -22,6 +22,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_WORKSPACE = PROJECT_ROOT / "agent_workspace"
 AGENT_SCRIPT_DIR = AGENT_WORKSPACE / "scripts"
 AGENT_MEMORY_DIR = AGENT_WORKSPACE / "memory"
+DENIED_PROJECT_PATHS = (
+    PROJECT_ROOT / "secrets",
+    PROJECT_ROOT / "gui" / "last_form.json",
+    PROJECT_ROOT / "agent_workspace" / "logs",
+    PROJECT_ROOT / ".git",
+)
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -99,6 +105,19 @@ def ensure_within(path: Path, allowed_roots: list[Path]) -> Path:
         if resolved == root_resolved or root_resolved in resolved.parents:
             return resolved
     raise RuntimeError(f"路径不在允许范围内: {resolved}")
+
+
+def ensure_not_denied(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    for denied in DENIED_PROJECT_PATHS:
+        denied_resolved = denied.expanduser().resolve()
+        if resolved == denied_resolved or denied_resolved in resolved.parents:
+            raise RuntimeError(f"路径属于敏感本机状态，拒绝访问: {resolved}")
+    return resolved
+
+
+def ensure_allowed_path(path: Path, allowed_roots: list[Path]) -> Path:
+    return ensure_not_denied(ensure_within(path, allowed_roots))
 
 
 def normalize_chunk_sizes(values: Any) -> list[int]:
@@ -376,7 +395,7 @@ def read_limited_file(path: str, output_dir: str = "") -> dict[str, Any]:
     allowed_roots = [PROJECT_ROOT]
     if output_dir:
         allowed_roots.append(Path(output_dir))
-    target = ensure_within(Path(path), allowed_roots)
+    target = ensure_allowed_path(Path(path), allowed_roots)
     if not target.is_file():
         raise RuntimeError(f"文件不存在: {target}")
     if target.stat().st_size > 512_000:
@@ -392,11 +411,15 @@ def list_limited_dir(path: str, output_dir: str = "") -> dict[str, Any]:
     allowed_roots = [PROJECT_ROOT]
     if output_dir:
         allowed_roots.append(Path(output_dir))
-    target = ensure_within(Path(path), allowed_roots)
+    target = ensure_allowed_path(Path(path), allowed_roots)
     if not target.is_dir():
         raise RuntimeError(f"目录不存在: {target}")
     entries = []
     for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))[:200]:
+        try:
+            ensure_not_denied(item)
+        except RuntimeError:
+            continue
         entries.append(
             {
                 "name": item.name,
@@ -608,18 +631,26 @@ def run_limited_command(
     allowed_roots = [PROJECT_ROOT]
     if output_dir:
         allowed_roots.append(Path(output_dir))
-    workdir = ensure_within(Path(cwd) if cwd else PROJECT_ROOT, allowed_roots)
+    workdir = ensure_allowed_path(Path(cwd) if cwd else PROJECT_ROOT, allowed_roots)
 
     if program in {"python", "python.exe", "py", "py.exe"}:
-        script_arg = next((arg for arg in args[1:] if arg.endswith((".py", ".pyw"))), "")
-        if not script_arg:
-            raise RuntimeError("受限 python 命令必须指定 agent_workspace/scripts 下的脚本。")
+        if len(args) < 2 or args[1].startswith("-") or not args[1].endswith((".py", ".pyw")):
+            raise RuntimeError("受限 python 命令只允许: python agent_workspace/scripts/<script>.py [args...]。")
+        script_arg = args[1]
         script_path = Path(script_arg)
         if not script_path.is_absolute():
             script_path = workdir / script_path
-        ensure_within(script_path, [AGENT_SCRIPT_DIR])
+        ensure_allowed_path(script_path, [AGENT_SCRIPT_DIR])
     elif program in {"rg", "rg.exe"}:
-        pass
+        blocked_rg_args = {"-u", "-uu", "-uuu", "--hidden", "--no-ignore", "--no-ignore-vcs", "--no-ignore-parent", "--no-ignore-global", "--no-ignore-dot"}
+        for arg in args[1:]:
+            if arg in blocked_rg_args or arg.startswith("--no-ignore"):
+                raise RuntimeError(f"受限 rg 命令拒绝绕过忽略规则的参数: {arg}")
+            candidate = Path(arg)
+            if not candidate.is_absolute():
+                candidate = workdir / candidate
+            if candidate.exists():
+                ensure_allowed_path(candidate, allowed_roots)
     else:
         raise RuntimeError(
             "只允许运行 rg，或运行 agent_workspace/scripts 下的 Python 脚本。"

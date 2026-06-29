@@ -80,3 +80,4 @@ o_chapters_found，不再抛异常；这不等同于确认全书完结。
 ## 2026-06-30 引导入口与开源准备
 - UI 在模型选择下方新增“引导”和“清除输入”。“引导”仍调用同一个工具型 Agent，区别是传入 `interaction_mode=guided_execute` 和最近日志 `prior_records`，让 AI 结合用户新自由描述续做而不是从零开始。
 - `.gitignore` 排除 `secrets/API.txt`、`gui/last_form.json`、`agent_workspace` 运行状态、输出目录、日志、缓存和备份；仅保留 `secrets/API.example.txt` 作为配置模板。
+- 受限工具运行时也拒绝读取 `secrets/`、`gui/last_form.json`、`agent_workspace/logs/` 和 `.git/`；`run_limited_command` 只允许直接运行 `agent_workspace/scripts` 下的 Python 脚本，并拒绝 `rg --no-ignore`、`--hidden`、`-u` 等绕过参数。
