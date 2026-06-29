@@ -3,10 +3,11 @@
 ## 当前结构
 - `agent_api/siliconflow_agent.py`：只调用硅基流动 DeepSeek API，不执行下载。
 - `executor/agent_runtime.py`：Agent 循环，负责把模型 `tool_calls` 分发给本地工具，并把工具结果回灌给模型。
-- `executor/novel_task_executor.py`：本地工具实现，包括搜索源、验源、下载、受限读目录、受限读文件、写 agent 记忆、过滤非正文、重新编号、按分卷写入 TXT，不调用 API。
+- `executor/novel_task_executor.py`：本地工具实现，包括搜索源、验源、下载、受限读目录、受限读文件、写 agent 记忆、声明式 agent script、过滤非正文、重新编号、按分卷写入 TXT，不调用 API。
 - `gui/smart_downloader_gui.py`：Tkinter 面板，负责收集输入、缓存表单、展示日志、串联 Agent runtime。
 - `启动智能下载器.vbs`：静默启动入口，项目根 `D:\chatgpt\Tools\Novel_Downloader` 也放了一份。
 - `agent_workspace/memory`：AI 可写入的记忆目录。
+- `agent_workspace/scripts`：AI 可写入声明式 `.agent.json`，但不运行 Python/PowerShell，由程序解释执行受控 op。
 
 ## API 设置
 - API key 默认从 `secrets\API.txt` 读取；开源时仅保留 `secrets\API.example.txt`。
@@ -44,7 +45,7 @@
 - GUI 每次写入紫色 `结束` 行后，会把本次任务日志自动保存到 `agent_workspace/logs`，最多保留 20 份，超出后删除最旧日志。
 - Agent runtime 最大轮次默认 40，并保留工具历史摘要，避免短循环硬停或丢失前面下载/失败事实。
 - 新增 inspect_download_output，AI 可检查输出目录和 download_report.json，不再只能靠猜。
-- 新增 `run_limited_command`，仅允许 rg，cwd 限于项目目录或 GUI 授权下载目录。
+- 新增 `run_limited_command`，仅允许安全参数的 rg，cwd 限于项目目录或本次小说输出目录。
 - 系统提示已从固定 search/inspect/download 流程改成通用工具 agent：AI 自己决定下一步，但需要查看/检查/下载时必须调用工具。
 
 ## 2026-06-29 下载完成判定修复
@@ -73,7 +74,9 @@
 ## 2026-06-30 引导入口与开源准备
 - UI 在模型选择下方新增“引导”和“清除输入”。“引导”仍调用同一个工具型 Agent，区别是传入 `interaction_mode=guided_execute` 和最近日志 `prior_records`，让 AI 结合用户新自由描述续做而不是从零开始。
 - `.gitignore` 排除 `secrets/API.txt`、`gui/last_form.json`、`agent_workspace` 运行状态、输出目录、日志、缓存和备份；仅保留 `secrets/API.example.txt` 作为配置模板。
-- 受限工具运行时也拒绝读取 `secrets/`、`gui/last_form.json`、`agent_workspace/logs/` 和 `.git/`；`run_limited_command` 拒绝 `rg --no-ignore`、`--hidden`、`-u` 等绕过参数。
-- 已移除模型生成 Python 脚本的执行能力；`run_limited_command` 仅允许 `rg`。所有需要下载目录授权的工具都会由 runtime 用 GUI 表单里的保存路径覆盖模型传入的 `output_dir`。
+- 受限工具运行时也拒绝读取 `secrets/`、`gui/last_form.json`、`agent_workspace/logs/` 和 `.git/`；`run_limited_command` 拒绝 `rg --no-ignore`、`--hidden`、`-u`、`--pre`、`--pre-glob`、`--search-zip` 等绕过参数。
+- 已移除模型生成 Python/PowerShell 脚本的执行能力；`run_limited_command` 仅允许安全参数的 `rg`。下载工具使用 GUI 保存根目录写入 `保存位置/小说名`，读文件、列目录、rg 和 agent script 只授权到本次小说输出目录。
+- 新增 `write_agent_script` / `run_agent_script`。脚本格式是声明式 JSON，仅支持 `list_dir`、`read_text`、`search_text`、`parse_json`、`regex_extract`、`count_chapter_files`、`write_memory`，用于给 AI 保留安全的多步检查能力。
+- 配置化源正则新增 ReDoS 静态拦截，拒绝明显的嵌套无界量词和反向引用。
 - 小说网页请求使用 `ProxyHandler({})` 强制本地直连，不走系统代理；自定义重定向处理器在跟随 Location 前重新执行公网 URL 校验。
 

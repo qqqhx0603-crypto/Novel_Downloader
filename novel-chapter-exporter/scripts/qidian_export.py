@@ -894,10 +894,24 @@ def _detect_charset(raw: bytes, header_charset: Optional[str]) -> str:
 def _safe_regex(pattern: str, *, field: str) -> re.Pattern[str]:
     if not pattern or len(pattern) > 3000:
         raise RuntimeError(f"源配置 {field} 正则为空或过长。")
+    reject_unsafe_regex(pattern, field=field)
     try:
         return re.compile(pattern, flags=re.IGNORECASE | re.DOTALL)
     except re.error as exc:
         raise RuntimeError(f"源配置 {field} 正则无效: {exc}") from exc
+
+
+def reject_unsafe_regex(pattern: str, *, field: str) -> None:
+    """Reject obvious catastrophic-backtracking patterns from AI-provided configs."""
+    normalized = re.sub(r"\(\?P<[^>]+>", "(", pattern)
+    normalized = re.sub(r"\(\?:", "(", normalized)
+    nested_quantifier = re.compile(
+        r"\((?:[^()\\]|\\.)*(?:[*+]|\{\d+,?\d*\})(?:[^()\\]|\\.)*\)\s*(?:[*+]|\{\d+,\d*\})"
+    )
+    if nested_quantifier.search(normalized):
+        raise RuntimeError(f"源配置 {field} 正则包含高风险嵌套量词。")
+    if re.search(r"\\[1-9]", pattern):
+        raise RuntimeError(f"源配置 {field} 正则不允许使用反向引用。")
 
 
 def _same_site_url(site: str, value: str) -> str:

@@ -7,6 +7,7 @@ not call any LLM API.
 from __future__ import annotations
 
 import concurrent.futures
+import fnmatch
 import html
 import json
 import re
@@ -553,6 +554,208 @@ def write_agent_file(relative_path: str, content: str, kind: str = "memory") -> 
     return {"status": "ok", "path": str(target), "kind": kind}
 
 
+def write_agent_script(relative_path: str, script: dict[str, Any] | str) -> dict[str, Any]:
+    """Write a declarative agent script. It is data, not executable code."""
+    rel = str(relative_path or "").strip()
+    if not rel:
+        raise RuntimeError("缺少脚本相对路径。")
+    if not rel.endswith(".agent.json"):
+        rel += ".agent.json"
+    target = ensure_within(AGENT_SCRIPT_DIR / rel, [AGENT_SCRIPT_DIR])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(script, str):
+        parsed = json.loads(script)
+    else:
+        parsed = script
+    _validate_agent_script(parsed)
+    target.write_text(json.dumps(parsed, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "ok", "path": str(target), "format": "agent_json"}
+
+
+def _validate_agent_script(script: Any) -> None:
+    if not isinstance(script, dict):
+        raise RuntimeError("agent script 顶层必须是对象。")
+    steps = script.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise RuntimeError("agent script 必须包含非空 steps 数组。")
+    if len(steps) > 50:
+        raise RuntimeError("agent script steps 过多。")
+    allowed_ops = {
+        "list_dir",
+        "read_text",
+        "search_text",
+        "parse_json",
+        "regex_extract",
+        "count_chapter_files",
+        "write_memory",
+    }
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            raise RuntimeError(f"agent script 第 {index} 步必须是对象。")
+        op = str(step.get("op") or "")
+        if op not in allowed_ops:
+            raise RuntimeError(f"agent script 第 {index} 步不支持的 op: {op}")
+
+
+def _resolve_agent_token_path(value: str, *, output_dir: str) -> Path:
+    text = str(value or "").strip()
+    if text == "$project":
+        return PROJECT_ROOT
+    if text.startswith("$project/"):
+        return PROJECT_ROOT / text[len("$project/"):]
+    if text == "$book_output":
+        if not output_dir:
+            raise RuntimeError("缺少本次小说输出目录授权。")
+        return Path(output_dir)
+    if text.startswith("$book_output/"):
+        if not output_dir:
+            raise RuntimeError("缺少本次小说输出目录授权。")
+        return Path(output_dir) / text[len("$book_output/"):]
+    return Path(text)
+
+
+def _context_value(context: dict[str, Any], key: str) -> Any:
+    if not key:
+        return None
+    return context.get(key)
+
+
+def _text_from_step(step: dict[str, Any], context: dict[str, Any]) -> str:
+    if "text" in step:
+        return str(step.get("text") or "")
+    value = _context_value(context, str(step.get("from") or ""))
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _save_step_value(step: dict[str, Any], context: dict[str, Any], value: Any) -> None:
+    key = str(step.get("save_as") or "").strip()
+    if key:
+        context[key] = value
+
+
+def _safe_script_regex(pattern: str) -> re.Pattern[str]:
+    if not pattern or len(pattern) > 500:
+        raise RuntimeError("脚本正则为空或过长。")
+    qe.reject_unsafe_regex(pattern, field="agent_script.regex")
+    return re.compile(pattern, flags=re.IGNORECASE | re.MULTILINE)
+
+
+def run_agent_script(relative_path: str, output_dir: str = "") -> dict[str, Any]:
+    script_path = ensure_allowed_path(AGENT_SCRIPT_DIR / str(relative_path or ""), [AGENT_SCRIPT_DIR])
+    if not script_path.is_file():
+        raise RuntimeError(f"agent script 不存在: {script_path}")
+    if script_path.suffix.lower() != ".json" or not script_path.name.endswith(".agent.json"):
+        raise RuntimeError("只允许运行 .agent.json 声明式脚本。")
+    if script_path.stat().st_size > 128_000:
+        raise RuntimeError("agent script 文件过大。")
+    script = json.loads(script_path.read_text(encoding="utf-8", errors="replace"))
+    _validate_agent_script(script)
+
+    allowed_roots = [PROJECT_ROOT]
+    if output_dir:
+        allowed_roots.append(Path(output_dir))
+    context: dict[str, Any] = {}
+    step_results: list[dict[str, Any]] = []
+    for index, step in enumerate(script["steps"], start=1):
+        op = str(step.get("op") or "")
+        if op == "list_dir":
+            target = ensure_allowed_path(
+                _resolve_agent_token_path(str(step.get("path") or ""), output_dir=output_dir),
+                allowed_roots,
+            )
+            if not target.is_dir():
+                raise RuntimeError(f"第 {index} 步目录不存在: {target}")
+            entries = []
+            for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))[:200]:
+                try:
+                    ensure_not_denied(item)
+                except RuntimeError:
+                    continue
+                entries.append({"name": item.name, "type": "dir" if item.is_dir() else "file", "size": item.stat().st_size if item.is_file() else None})
+            value = {"path": str(target), "entries": entries}
+        elif op == "read_text":
+            target = ensure_allowed_path(
+                _resolve_agent_token_path(str(step.get("path") or ""), output_dir=output_dir),
+                allowed_roots,
+            )
+            if not target.is_file():
+                raise RuntimeError(f"第 {index} 步文件不存在: {target}")
+            if target.stat().st_size > 512_000:
+                raise RuntimeError(f"第 {index} 步文件过大: {target}")
+            value = target.read_text(encoding="utf-8", errors="replace")
+        elif op == "search_text":
+            root = ensure_allowed_path(
+                _resolve_agent_token_path(str(step.get("path") or "$book_output"), output_dir=output_dir),
+                allowed_roots,
+            )
+            if not root.exists():
+                value = {"path": str(root), "matches": []}
+            else:
+                pattern = str(step.get("pattern") or "")
+                regex = _safe_script_regex(pattern)
+                glob = str(step.get("glob") or "*.txt")
+                matches = []
+                files = [root] if root.is_file() else [p for p in root.rglob("*") if p.is_file()]
+                for file_path in files[:1000]:
+                    ensure_allowed_path(file_path, allowed_roots)
+                    if not fnmatch.fnmatch(file_path.name, glob):
+                        continue
+                    if file_path.stat().st_size > 512_000:
+                        continue
+                    text = file_path.read_text(encoding="utf-8", errors="replace")
+                    for line_no, line in enumerate(text.splitlines(), start=1):
+                        if regex.search(line):
+                            matches.append({"path": str(file_path), "line": line_no, "text": line[:300]})
+                            if len(matches) >= 200:
+                                break
+                    if len(matches) >= 200:
+                        break
+                value = {"path": str(root), "matches": matches}
+        elif op == "parse_json":
+            value = json.loads(_text_from_step(step, context))
+        elif op == "regex_extract":
+            regex = _safe_script_regex(str(step.get("pattern") or ""))
+            text = _text_from_step(step, context)
+            limit = max(1, min(int(step.get("limit") or 50), 200))
+            value = [match.groupdict() or list(match.groups()) or match.group(0) for match in regex.finditer(text)][:limit]
+        elif op == "count_chapter_files":
+            root = ensure_allowed_path(
+                _resolve_agent_token_path(str(step.get("path") or "$book_output"), output_dir=output_dir),
+                allowed_roots,
+            )
+            files = sorted(root.rglob("*.txt")) if root.exists() else []
+            numbers: list[int] = []
+            for file_path in files:
+                ensure_allowed_path(file_path, allowed_roots)
+                numbers.extend(_parse_file_numbers(file_path.name))
+            unique = sorted(set(numbers))
+            missing = []
+            if unique:
+                present = set(unique)
+                missing = [num for num in range(unique[0], unique[-1] + 1) if num not in present]
+            value = {
+                "path": str(root),
+                "file_count": len(files),
+                "min_number": unique[0] if unique else None,
+                "max_number": unique[-1] if unique else None,
+                "missing_count": len(missing),
+                "missing_preview": missing[:50],
+            }
+        elif op == "write_memory":
+            target = ensure_within(AGENT_MEMORY_DIR / str(step.get("path") or ""), [AGENT_MEMORY_DIR])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            content_value = _text_from_step(step, context)
+            target.write_text(content_value, encoding="utf-8")
+            value = {"path": str(target), "bytes": len(content_value.encode("utf-8"))}
+        else:
+            raise RuntimeError(f"第 {index} 步不支持的 op: {op}")
+        _save_step_value(step, context, value)
+        step_results.append({"index": index, "op": op, "result": value if op != "read_text" else {"chars": len(value)}})
+    return {"status": "ok", "script_path": str(script_path), "steps": step_results, "context_keys": sorted(context)}
+
+
 def _parse_file_numbers(name: str) -> list[int]:
     stem = Path(name).stem
     match = re.search(r"_(\d+)(?:-(\d+))?$", stem)
@@ -636,9 +839,28 @@ def run_limited_command(
     workdir = ensure_allowed_path(Path(cwd) if cwd else PROJECT_ROOT, allowed_roots)
 
     if program in {"rg", "rg.exe"}:
-        blocked_rg_args = {"-u", "-uu", "-uuu", "--hidden", "--no-ignore", "--no-ignore-vcs", "--no-ignore-parent", "--no-ignore-global", "--no-ignore-dot"}
+        blocked_rg_args = {
+            "-u",
+            "-uu",
+            "-uuu",
+            "-z",
+            "--hidden",
+            "--no-ignore",
+            "--no-ignore-vcs",
+            "--no-ignore-parent",
+            "--no-ignore-global",
+            "--no-ignore-dot",
+            "--search-zip",
+            "--pre",
+            "--pre-glob",
+        }
+        blocked_rg_prefixes = (
+            "--no-ignore",
+            "--pre=",
+            "--pre-glob=",
+        )
         for arg in args[1:]:
-            if arg in blocked_rg_args or arg.startswith("--no-ignore"):
+            if arg in blocked_rg_args or any(arg.startswith(prefix) for prefix in blocked_rg_prefixes):
                 raise RuntimeError(f"受限 rg 命令拒绝绕过忽略规则的参数: {arg}")
             candidate = Path(arg)
             if not candidate.is_absolute():
