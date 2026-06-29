@@ -205,3 +205,7 @@ Novel_Downloader/
 
 - `novel-chapter-exporter/README.md`：命令行参数、GUI 行为、免费源和安全边界的详细说明。
 - `novel-chapter-exporter/memory/agent_gui_design.md`：项目设计记录。
+
+## 许可证
+
+本项目使用 MIT License，详见 `LICENSE`。
