@@ -1,0 +1,31 @@
+# Python cache / build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+
+# Local secrets and private config
+novel-chapter-exporter/secrets/*
+!novel-chapter-exporter/secrets/API.example.txt
+novel-chapter-exporter/gui/last_form.json
+
+# Agent/runtime local state
+novel-chapter-exporter/agent_workspace/logs/
+novel-chapter-exporter/agent_workspace/scripts/
+novel-chapter-exporter/agent_workspace/memory/
+novel-chapter-exporter/output/
+
+# Local backups and temp files
+*.bak-*
+*.tmp
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

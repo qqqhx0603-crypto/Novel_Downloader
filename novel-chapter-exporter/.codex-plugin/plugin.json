@@ -1,0 +1,34 @@
+{
+  "name": "qidian-chapter-exporter",
+  "version": "0.1.0",
+  "description": "将起点小说章节导出为本地 TXT 文件。",
+  "author": {
+    "name": "Local Workspace",
+    "email": "local@example.com",
+    "url": "https://www.qidian.com/"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qidian",
+    "chapter",
+    "txt-export"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "起点章节导出",
+    "shortDescription": "将起点章节批量导出为本地 TXT",
+    "longDescription": "输入书籍或章节链接，自动抓取可读取章节并保存到本地文本文件。",
+    "developerName": "Local Workspace",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "把这本起点小说从首章开始导出到本地TXT",
+      "把这个起点章节导出到D盘指定目录",
+      "导出整本并合并成一个TXT文件"
+    ],
+    "brandColor": "#1F6FEB"
+  }
+}

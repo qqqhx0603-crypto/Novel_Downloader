@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "name": "piaotia",
+      "enabled": true,
+      "default": false,
+      "site": "https://www.piaotia.com",
+      "notes": "飘天文学普通 HTML 源，GBK/GB2312 页面，目录较全。",
+      "suggested_workers": 4,
+      "suggested_batch_size": 80,
+      "book_path_regex": "^/html/\\d+/\\d+/$",
+      "search": {
+        "method": "GET",
+        "encoding": "gbk",
+        "url": "/modules/article/search.php?searchkey={query}",
+        "result_regex": "<a\\b[^>]*href=\"(?P<path>https://www\\.piaotia\\.com/html/\\d+/\\d+/)\"[^>]*>\\s*(?P<title>.*?)\\s*</a>"
+      },
+      "catalog": {
+        "url": "/{book_path}/",
+        "item_regex": "<a\\b[^>]*href=\"(?P<path>\\d+\\.html)\"[^>]*>(?P<title>.*?)</a>"
+      },
+      "chapter": {
+        "start_regex": "<br>\\s*(?:&nbsp;\\s*){4}",
+        "end_regex": "</div>\\s*<!--\\s*翻页上AD开始"
+      },
+      "cleanup_contains": [
+        "飘天文学",
+        "章节目录",
+        "加入书架",
+        "推荐本书",
+        "上一章",
+        "返回目录",
+        "下一章"
+      ]
+    },
+    {
+      "name": "czbooks",
+      "enabled": true,
+      "default": true,
+      "site": "https://czbooks.net",
+      "notes": "小說狂人繁体 HTML 源，支持简体书名搜索，目录和正文均为普通 HTML。",
+      "suggested_workers": 4,
+      "suggested_batch_size": 80,
+      "book_path_regex": "^/n/[a-z0-9]+$",
+      "search": {
+        "method": "GET",
+        "encoding": "utf-8",
+        "url": "/s/{query}",
+        "result_regex": "<a\\b[^>]*href\\s*=\\s*\"(?P<path>//czbooks\\.net/n/[a-z0-9]+)\"[^>]*>(?P<title>.*?)</a>"
+      },
+      "catalog": {
+        "url": "/{book_path}",
+        "item_regex": "<a\\b[^>]*href\\s*=\\s*\"(?P<path>//czbooks\\.net/n/[a-z0-9]+/[a-z0-9]+\\?chapterNumber=\\d+)\"[^>]*>(?P<title>.*?)</a>"
+      },
+      "chapter": {
+        "content_regex": "<div\\s+class\\s*=\\s*\"content\"[^>]*>(?P<content>.*?)</div>"
+      },
+      "cleanup_contains": [
+        "小說狂人",
+        "首頁",
+        "目錄",
+        "繁简轉換",
+        "回報錯誤"
+      ]
+    },
+    {
+      "name": "sto55",
+      "enabled": true,
+      "default": false,
+      "site": "https://sto55.com",
+      "notes": "思兔阅读繁体备用源，普通 HTML，目录能力较强但正文为繁体。",
+      "suggested_workers": 4,
+      "suggested_batch_size": 80,
+      "book_path_regex": "^/book/\\d+/$",
+      "search": {
+        "method": "POST",
+        "encoding": "utf-8",
+        "url": "/search",
+        "accept_final_url": true,
+        "fields": {
+          "searchtype": "all",
+          "searchkey": "{book_name}",
+          "action": "login",
+          "submit": "搜索"
+        }
+      },
+      "catalog": {
+        "url": "/{book_path}/",
+        "item_regex": "<a\\b[^>]*href=\"(?P<path>https://sto55\\.com/book/\\d+/\\d+\\.html)\"[^>]*>(?P<title>[^<]*\\d+[^<]*)</a>"
+      },
+      "chapter": {
+        "content_regex": "<div\\s+class=\"readcotent[^\"]*\"[^>]*>(?P<content>.*?)</div>"
+      },
+      "cleanup_contains": [
+        "思兔閱讀",
+        "首頁",
+        "上一章",
+        "下一章",
+        "返回目錄",
+        "加入書簽",
+        "loadAdv"
+      ]
+    }
+  ]
+}
