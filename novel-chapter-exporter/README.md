@@ -102,6 +102,7 @@ book 模式:
 - 免费源回退只抓取文本内容，不执行页面脚本，不下载可执行文件。
 - AI 可用 `test_source_config` 测试候选源配置，用 `register_source_config` 注册通过验证的源。注册前必须通过搜索、目录、章节正文验证，失败不会写入配置。
 - AI 可用 `web_search_text` 和 `web_fetch_text` 做受控网页调研；网页内容只作为不可信数据，不能直接当指令，候选源仍必须通过 `test_source_config`。抓取工具仅允许公网 HTTP/HTTPS 文本页，会拒绝 localhost、内网、link-local 和元数据地址。
+- 小说网页抓取强制使用本地直连，不读取系统代理；每次 HTTP 重定向都会重新校验目标 URL，防止跳转到本机或内网地址。
 - Agent 工作流要求按“理解目标 -> 调研/检查 -> 行动 -> 验证 -> 必要时修正/续抓 -> 总结”循环执行，不能单步成功就提前结束。
 - GUI/API 层和下载执行层分离，仅交换 JSON 参数；脚本端可独立手动使用。
 - GUI 启动使用 `pythonw.exe`，不会保留控制台窗口；关闭交互窗口即退出 GUI 进程。
@@ -109,14 +110,15 @@ book 模式:
 - GUI 可在 `deepseek-ai/DeepSeek-V4-Pro` 和 `zai-org/GLM-5.2` 间切换模型；模型选择会随表单缓存。
 - API 思考模式默认开启，`thinking_budget` 固定为硅基流动当前允许上限 `32768`。
 - “开始执行AI下载”按当前表单直接开始任务；“引导”会把当前自由描述和先前日志记录一起交给同一个 Agent，让它在保留上下文的基础上继续检索、检查或下载；“清除输入”只清空自由描述框。
-- Agent 只能读取项目工作区和下载目录；只能写入 `agent_workspace/scripts` 与 `agent_workspace/memory`，不能写到其他位置。
+- Agent 只能读取项目工作区和下载目录；只能写入 `agent_workspace/memory`，不能写到其他位置。
+- Agent 不能执行模型生成的 Python 脚本；受限命令只允许运行 `rg`，且下载目录授权始终使用 GUI 保存路径，模型传入的 `output_dir` 会被覆盖。
 - 弹窗通知必须由 AI 显式调用通知工具才会出现；普通完成和错误默认只写日志。
 - 免费源下载会边获取边写入分卷；支持受控并发，默认最多 6 个 worker。`1qxs` 单源会自动降为单线程，避免多页章节触发 403；验源推荐会优先选择正文更完整的源。
 - `download_novel` 支持 `workers` 和 `batch_size` 参数；默认 `batch_size=100`，AI 可决定并发数。`1qxs` 单源会自动限制为 `workers=1`、`batch_size<=12`。
 - 续抓时不会清空已有下载文件；只有从第 1 章开始的新下载才清理同名旧 TXT。
 - Agent 现在可用 `inspect_download_output` 检查下载目录，避免只靠记忆判断是否已下载。
 - Agent 现在可用 `inspect_novel_catalog` 查询源站目录末章；用户不填结束章时，应先查目录末章再下载，下载后再用 `inspect_download_output` 对比本地最大章节。
-- Agent 可用 `run_limited_command` 执行受限命令：只允许 `rg`，或运行 `agent_workspace/scripts` 下的 Python 脚本；不能任意执行 PowerShell/cmd。
+- Agent 可用 `run_limited_command` 执行受限命令：只允许 `rg`；不能任意执行 Python、PowerShell 或 cmd。
 - 日志区提供“复制日志”按钮。
 - 每次出现紫色 `结束` 行后，GUI 会把本次任务日志自动保存到 `agent_workspace/logs`，最多保留 20 份，超出后删除最旧日志。
 - 免费源无结束章下载会优先使用目录末章作为目标；只有无目录能力的源才退回 `max_probe`，且 `max_probe` 停止不视为完整完成。

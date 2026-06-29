@@ -115,6 +115,19 @@ MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 BLOCKED_HOST_NAMES = {"localhost", "localhost.localdomain"}
 
 
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_safe_text_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def build_direct_opener(*handlers: urllib.request.BaseHandler) -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), SafeRedirectHandler(), *handlers)
+
+
+DIRECT_OPENER = build_direct_opener()
+
+
 @dataclass
 class BookInfo:
     book_id: int
@@ -273,9 +286,7 @@ class OneQXSProvider(FreeSourceProvider):
 
     def __init__(self) -> None:
         cookie_jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        )
+        self._opener = build_direct_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
         self._book_path_cache: dict[str, str] = {}
 
     @staticmethod
@@ -473,9 +484,7 @@ class FxnzwProvider(FreeSourceProvider):
 
     def __init__(self) -> None:
         cookie_jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        )
+        self._opener = build_direct_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
         self._book_path_cache: dict[str, str] = {}
 
     @staticmethod
@@ -654,9 +663,7 @@ class BQG2Provider(FreeSourceProvider):
 
     def __init__(self) -> None:
         cookie_jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        )
+        self._opener = build_direct_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
         self._book_path_cache: dict[str, str] = {}
 
     @staticmethod
@@ -931,9 +938,7 @@ class ConfigurableFreeSourceProvider(FreeSourceProvider):
         self.site = str(config["site"]).rstrip("/")
         self._book_path_cache: dict[str, str] = {}
         cookie_jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        )
+        self._opener = build_direct_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
 
     def _format(self, template: str, *, book_name: str = "", book_path: str = "", query_encoding: str = "utf-8") -> str:
         return template.format(
@@ -1257,7 +1262,7 @@ def fetch_html(
 ) -> tuple[str, str, str]:
     validate_safe_text_url(url)
     request = urllib.request.Request(url=url, headers=headers or DESKTOP_HEADERS, data=data)
-    open_func = opener.open if opener is not None else urllib.request.urlopen
+    open_func = opener.open if opener is not None else DIRECT_OPENER.open
 
     try:
         with open_func(request, timeout=timeout) as response:

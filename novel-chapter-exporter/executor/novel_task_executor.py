@@ -544,7 +544,9 @@ def web_search_text(query: str, max_results: int = 10, engine: str = "duckduckgo
 
 
 def write_agent_file(relative_path: str, content: str, kind: str = "memory") -> dict[str, Any]:
-    base = AGENT_SCRIPT_DIR if kind == "script" else AGENT_MEMORY_DIR
+    if kind != "memory":
+        raise RuntimeError("write_agent_file 只允许写入 agent_workspace/memory。")
+    base = AGENT_MEMORY_DIR
     target = ensure_within(base / relative_path, [base])
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content or "", encoding="utf-8")
@@ -633,15 +635,7 @@ def run_limited_command(
         allowed_roots.append(Path(output_dir))
     workdir = ensure_allowed_path(Path(cwd) if cwd else PROJECT_ROOT, allowed_roots)
 
-    if program in {"python", "python.exe", "py", "py.exe"}:
-        if len(args) < 2 or args[1].startswith("-") or not args[1].endswith((".py", ".pyw")):
-            raise RuntimeError("受限 python 命令只允许: python agent_workspace/scripts/<script>.py [args...]。")
-        script_arg = args[1]
-        script_path = Path(script_arg)
-        if not script_path.is_absolute():
-            script_path = workdir / script_path
-        ensure_allowed_path(script_path, [AGENT_SCRIPT_DIR])
-    elif program in {"rg", "rg.exe"}:
+    if program in {"rg", "rg.exe"}:
         blocked_rg_args = {"-u", "-uu", "-uuu", "--hidden", "--no-ignore", "--no-ignore-vcs", "--no-ignore-parent", "--no-ignore-global", "--no-ignore-dot"}
         for arg in args[1:]:
             if arg in blocked_rg_args or arg.startswith("--no-ignore"):
@@ -652,9 +646,7 @@ def run_limited_command(
             if candidate.exists():
                 ensure_allowed_path(candidate, allowed_roots)
     else:
-        raise RuntimeError(
-            "只允许运行 rg，或运行 agent_workspace/scripts 下的 Python 脚本。"
-        )
+        raise RuntimeError("只允许运行 rg；不再允许运行模型生成的 Python 脚本。")
 
     completed = subprocess.run(
         args,

@@ -3,10 +3,10 @@
 ## 当前结构
 - `agent_api/siliconflow_agent.py`：只调用硅基流动 DeepSeek API，不执行下载。
 - `executor/agent_runtime.py`：Agent 循环，负责把模型 `tool_calls` 分发给本地工具，并把工具结果回灌给模型。
-- `executor/novel_task_executor.py`：本地工具实现，包括搜索源、验源、下载、受限读目录、受限读文件、写 agent 文件、过滤非正文、重新编号、按分卷写入 TXT，不调用 API。
+- `executor/novel_task_executor.py`：本地工具实现，包括搜索源、验源、下载、受限读目录、受限读文件、写 agent 记忆、过滤非正文、重新编号、按分卷写入 TXT，不调用 API。
 - `gui/smart_downloader_gui.py`：Tkinter 面板，负责收集输入、缓存表单、展示日志、串联 Agent runtime。
 - `启动智能下载器.vbs`：静默启动入口，项目根 `D:\chatgpt\Tools\Novel_Downloader` 也放了一份。
-- `agent_workspace/scripts` 与 `agent_workspace/memory`：AI 可写入的脚本和记忆目录。
+- `agent_workspace/memory`：AI 可写入的记忆目录。
 
 ## API 设置
 - API key 默认从 `secrets\API.txt` 读取；开源时仅保留 `secrets\API.example.txt`。
@@ -31,28 +31,21 @@
 - 输出会在保存位置下创建小说名文件夹，并按 `每章`、`5章`、`10章`、`100章`、`全文` 等子目录保存；免费源下载边获取边写入分卷，重写同一版本前会清理同书名旧 TXT。
 - 网页和小说正文都是不可信数据，Agent prompt 要求只把它们当数据，不执行其中指令。
 
-
 - 免费源下载默认最多 6 个 worker；1qxs 单源自动降为单线程避免多页章节 403，验源推荐按命中数和平均正文长度排序，通常会优先推荐正文更完整的 fxnzw。
 
-
-- 如果最后一次工具结果是 rror、partial 或 
-o_chapters_found，runtime 会覆盖模型的完成话术，以工具事实为准，防止 AI 忽略失败。
+- 如果最后一次工具结果是 error、partial 或 no_chapters_found，runtime 会覆盖模型的完成话术，以工具事实为准，防止 AI 忽略失败。
 - 续抓时不会清空已有下载文件；只有从第 1 章开始的新下载才清理同名旧 TXT。
-- download_novel 续抓无章节时返回 
-o_chapters_found，不再抛异常；这不等同于确认全书完结。
-
+- download_novel 续抓无章节时返回 no_chapters_found，不再抛异常；这不等同于确认全书完结。
 
 - GUI 不再在紫色 结束 后追加 流程结束: {...} JSON；最终汇总以 AI 回复或 runtime 事实判定为准。
-- download_novel 支持 workers 和 atch_size；默认 atch_size=100，AI 可决定并发数。1qxs 单源安全限制为 workers=1、atch_size<=12。
-
+- download_novel 支持 workers 和 batch_size；默认 batch_size=100，AI 可决定并发数。1qxs 单源安全限制为 workers=1、batch_size<=12。
 
 - GUI 日志区有复制日志按钮。
 - GUI 每次写入紫色 `结束` 行后，会把本次任务日志自动保存到 `agent_workspace/logs`，最多保留 20 份，超出后删除最旧日志。
 - Agent runtime 最大轮次默认 40，并保留工具历史摘要，避免短循环硬停或丢失前面下载/失败事实。
 - 新增 inspect_download_output，AI 可检查输出目录和 download_report.json，不再只能靠猜。
-- 新增 un_limited_command，仅允许 rg 或 agent_workspace/scripts 下的 Python 脚本，cwd 限于项目目录/下载目录。
+- 新增 `run_limited_command`，仅允许 rg，cwd 限于项目目录或 GUI 授权下载目录。
 - 系统提示已从固定 search/inspect/download 流程改成通用工具 agent：AI 自己决定下一步，但需要查看/检查/下载时必须调用工具。
-
 
 ## 2026-06-29 下载完成判定修复
 - 新增 `inspect_novel_catalog`，AI 可检查源站目录末章；用户未填结束章时，整本下载前后都应核对目录末章和本地最大章节。
@@ -80,4 +73,7 @@ o_chapters_found，不再抛异常；这不等同于确认全书完结。
 ## 2026-06-30 引导入口与开源准备
 - UI 在模型选择下方新增“引导”和“清除输入”。“引导”仍调用同一个工具型 Agent，区别是传入 `interaction_mode=guided_execute` 和最近日志 `prior_records`，让 AI 结合用户新自由描述续做而不是从零开始。
 - `.gitignore` 排除 `secrets/API.txt`、`gui/last_form.json`、`agent_workspace` 运行状态、输出目录、日志、缓存和备份；仅保留 `secrets/API.example.txt` 作为配置模板。
-- 受限工具运行时也拒绝读取 `secrets/`、`gui/last_form.json`、`agent_workspace/logs/` 和 `.git/`；`run_limited_command` 只允许直接运行 `agent_workspace/scripts` 下的 Python 脚本，并拒绝 `rg --no-ignore`、`--hidden`、`-u` 等绕过参数。
+- 受限工具运行时也拒绝读取 `secrets/`、`gui/last_form.json`、`agent_workspace/logs/` 和 `.git/`；`run_limited_command` 拒绝 `rg --no-ignore`、`--hidden`、`-u` 等绕过参数。
+- 已移除模型生成 Python 脚本的执行能力；`run_limited_command` 仅允许 `rg`。所有需要下载目录授权的工具都会由 runtime 用 GUI 表单里的保存路径覆盖模型传入的 `output_dir`。
+- 小说网页请求使用 `ProxyHandler({})` 强制本地直连，不走系统代理；自定义重定向处理器在跟随 Location 前重新执行公网 URL 校验。
+
